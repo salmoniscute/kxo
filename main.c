@@ -11,6 +11,8 @@
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
+#include <linux/vmalloc.h>
+
 #include "game.h"
 #include "mcts.h"
 #include "negamax.h"
@@ -30,7 +32,7 @@ MODULE_DESCRIPTION("In-kernel Tic-Tac-Toe game engine");
 
 #define NR_KMLDRV 1
 
-static int delay = 100; /* time (in ms) to generate an event */
+static int delay = 500; /* time (in ms) to generate an event */
 
 /* Declare kernel module attribute for sysfs */
 
@@ -285,15 +287,15 @@ static void game_tasklet_func(unsigned long __data)
 
     tv_start = ktime_get();
 
-    READ_ONCE(finish);
-    READ_ONCE(turn);
+    int finish_val = READ_ONCE(finish);
+    char turn_val = READ_ONCE(turn);
     smp_rmb();
 
-    if (finish && turn == 'O') {
+    if (finish_val && turn_val == 'O') {
         WRITE_ONCE(finish, 0);
         smp_wmb();
         queue_work(kxo_workqueue, &ai_one_work);
-    } else if (finish && turn == 'X') {
+    } else if (finish_val && turn_val == 'X') {
         WRITE_ONCE(finish, 0);
         smp_wmb();
         queue_work(kxo_workqueue, &ai_two_work);
