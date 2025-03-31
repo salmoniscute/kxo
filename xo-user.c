@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "game.h"
@@ -94,6 +95,15 @@ static void listen_keyboard_handler(void)
     }
     close(attr_fd);
 }
+int count = 0;
+
+static void display_time(void)
+{
+    time_t mytime = time(NULL);
+    char *time_str = ctime(&mytime);
+    time_str[strlen(time_str) - 1] = '\0';
+    printf("Current Time : %s\n", time_str);
+}
 
 int main(int argc, char *argv[])
 {
@@ -131,6 +141,7 @@ int main(int argc, char *argv[])
             printf("\033[H\033[J"); /* ASCII escape code to clear the screen */
             read(device_fd, display_buf, DRAWBUFFER_SIZE);
             draw_board(display_buf);
+            display_time();
         }
     }
 
