@@ -14,6 +14,19 @@
 #define XO_DEVICE_FILE "/dev/kxo"
 #define XO_DEVICE_ATTR_FILE "/sys/class/kxo/kxo/kxo_state"
 
+static void draw_board(const char *table)
+{
+    int k = 0;
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1 && k < N_GRIDS; j++)
+            printf("%c", j & 1 ? '|' : table[k++]);
+        printf("\n");
+        for (int j = 0; j < (BOARD_SIZE << 1) - 1; j++)
+            printf("-");
+        printf("\n");
+    }
+}
+
 static bool status_check(void)
 {
     FILE *fp = fopen(XO_STATUS_FILE, "r");
@@ -117,7 +130,7 @@ int main(int argc, char *argv[])
             FD_CLR(device_fd, &readset);
             printf("\033[H\033[J"); /* ASCII escape code to clear the screen */
             read(device_fd, display_buf, DRAWBUFFER_SIZE);
-            printf("%s", display_buf);
+            draw_board(display_buf);
         }
     }
 
