@@ -11,8 +11,6 @@
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
-#include <linux/vmalloc.h>
-
 #include "game.h"
 #include "mcts.h"
 #include "negamax.h"
