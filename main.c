@@ -30,7 +30,15 @@ MODULE_DESCRIPTION("In-kernel Tic-Tac-Toe game engine");
 
 #define NR_KMLDRV 1
 
-static int delay = 500; /* time (in ms) to generate an event */
+#define MAX_MOVES 100
+#define MOVE_BUFFER_SIZE 512
+
+static int delay = 100; /* time (in ms) to generate an event */
+
+static char move_history[MOVE_BUFFER_SIZE];
+static int move_count = 0;
+static char last_move_pos[3];
+static int game_count = 1;
 
 /* Declare kernel module attribute for sysfs */
 
@@ -66,7 +74,15 @@ static ssize_t kxo_state_store(struct device *dev,
     return count;
 }
 
+static ssize_t kxo_move_history_show(struct device *dev,
+                                     struct device_attribute *attr,
+                                     char *buf)
+{
+    return snprintf(buf, MOVE_BUFFER_SIZE, "%s\n", move_history);
+}
+
 static DEVICE_ATTR_RW(kxo_state);
+static DEVICE_ATTR_RO(kxo_move_history);
 
 /* Data produced by the simulated device */
 
@@ -175,6 +191,30 @@ static void drawboard_work_func(struct work_struct *w)
 static char turn;
 static int finish;
 
+static void index_to_position(int index, char *pos)
+{
+    pos[0] = 'A' + GET_COL(index);
+    pos[1] = '1' + GET_ROW(index);
+    pos[2] = '\0';
+}
+
+static void generate_move_history(int move)
+{
+    if (move_count < MAX_MOVES) {
+        index_to_position(move, last_move_pos);
+        // pr_warn("%s: last\n", last_move_pos);
+        int len = strlen(move_history);
+        if (move_count == 0)
+            snprintf(move_history + len, MOVE_BUFFER_SIZE - len, "Moves %d: %s",
+                     game_count++, last_move_pos);
+        else
+            snprintf(move_history + len, MOVE_BUFFER_SIZE - len, " -> %s",
+                     last_move_pos);
+        // pr_warn("%s: move_history\n", move_history);
+        move_count++;
+    }
+}
+
 static void ai_one_work_func(struct work_struct *w)
 {
     ktime_t tv_start, tv_end;
@@ -194,8 +234,10 @@ static void ai_one_work_func(struct work_struct *w)
 
     smp_mb();
 
-    if (move != -1)
+    if (move != -1) {
         WRITE_ONCE(table[move], 'O');
+        generate_move_history(move);
+    }
 
     WRITE_ONCE(turn, 'X');
     WRITE_ONCE(finish, 1);
@@ -228,8 +270,10 @@ static void ai_two_work_func(struct work_struct *w)
 
     smp_mb();
 
-    if (move != -1)
+    if (move != -1) {
         WRITE_ONCE(table[move], 'X');
+        generate_move_history(move);
+    }
 
     WRITE_ONCE(turn, 'O');
     WRITE_ONCE(finish, 1);
@@ -253,6 +297,8 @@ static DECLARE_WORK(drawboard_work, drawboard_work_func);
 static DECLARE_WORK(ai_one_work, ai_one_work_func);
 static DECLARE_WORK(ai_two_work, ai_two_work_func);
 
+static atomic_t inconsist_state;
+
 /* Tasklet handler.
  *
  * NOTE: different tasklets can run concurrently on different processors, but
@@ -268,6 +314,10 @@ static void game_tasklet_func(unsigned long __data)
     WARN_ON_ONCE(!in_softirq());
 
     tv_start = ktime_get();
+
+    // READ_ONCE(finish);
+    // READ_ONCE(turn);
+    // smp_rmb();
 
     int finish_val = READ_ONCE(finish);
     char turn_val = READ_ONCE(turn);
@@ -346,6 +396,12 @@ static void timer_handler(struct timer_list *__timer)
         if (attr_obj.end == '0') {
             memset(table, ' ',
                    N_GRIDS); /* Reset the table so the game restart */
+            if (move_count > 0) {
+                int len = strlen(move_history);
+                snprintf(move_history + len, MOVE_BUFFER_SIZE - len,
+                         " (%c Wins)\n", win);
+            }
+            move_count = 0;
             mod_timer(&timer, jiffies + msecs_to_jiffies(delay));
         }
 
@@ -475,6 +531,12 @@ static int __init kxo_init(void)
         goto error_cdev;
     }
 
+    ret = device_create_file(kxo_dev, &dev_attr_kxo_move_history);
+    if (ret < 0) {
+        printk(KERN_ERR "failed to create sysfs file kxo_move_history\n");
+        goto error_cdev;
+    }
+
     /* Allocate fast circular buffer */
     fast_buf.buf = vmalloc(PAGE_SIZE);
     if (!fast_buf.buf) {
@@ -497,6 +559,9 @@ static int __init kxo_init(void)
     negamax_init();
     mcts_init();
     memset(table, ' ', N_GRIDS);
+    memset(move_history, 0, MOVE_BUFFER_SIZE);
+    move_count = 0;
+    game_count = 1;
     turn = 'O';
     finish = 1;
 
@@ -507,6 +572,7 @@ static int __init kxo_init(void)
     /* Setup the timer */
     timer_setup(&timer, timer_handler, 0);
     atomic_set(&open_cnt, 0);
+    atomic_set(&inconsist_state, 0);
 
     pr_info("kxo: registered new kxo device: %d,%d\n", major, 0);
 out:

@@ -14,10 +14,12 @@
 #define XO_STATUS_FILE "/sys/module/kxo/initstate"
 #define XO_DEVICE_FILE "/dev/kxo"
 #define XO_DEVICE_ATTR_FILE "/sys/class/kxo/kxo/kxo_state"
+#define XO_MOVE_HISTORY_FILE "/sys/class/kxo/kxo/kxo_move_history"
 
 static void draw_board(const char *table)
 {
     int k = 0;
+    printf("\n");
     for (int i = 0; i < BOARD_SIZE; i++) {
         for (int j = 0; j < (BOARD_SIZE << 1) - 1 && k < N_GRIDS; j++)
             printf("%c", j & 1 ? '|' : table[k++]);
@@ -46,6 +48,26 @@ static bool status_check(void)
     }
     fclose(fp);
     return true;
+}
+
+
+static void display_move_history(void)
+{
+    FILE *fp = fopen(XO_MOVE_HISTORY_FILE, "r");
+    if (!fp) {
+        printf("kxo move history : not loaded\n");
+        return;
+    }
+
+    char history_buf[512];
+    size_t bytes_read = fread(history_buf, 1, sizeof(history_buf) - 1, fp);
+
+    if (bytes_read > 0) {
+        history_buf[bytes_read] = '\0';
+        printf("\n%s", history_buf);
+    }
+
+    fclose(fp);
 }
 
 static struct termios orig_termios;
@@ -90,6 +112,7 @@ static void listen_keyboard_handler(void)
             end_attr = true;
             write(attr_fd, buf, 6);
             printf("Stopping the kernel space tic-tac-toe game...\n");
+            display_move_history();
             break;
         }
     }
@@ -102,7 +125,7 @@ static void display_time(void)
     time_t mytime = time(NULL);
     char *time_str = ctime(&mytime);
     time_str[strlen(time_str) - 1] = '\0';
-    printf("Current Time : %s\n", time_str);
+    printf("\nCurrent Time : %s\n\n", time_str);
 }
 
 int main(int argc, char *argv[])

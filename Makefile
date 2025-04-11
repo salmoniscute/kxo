@@ -23,3 +23,6 @@ $(GIT_HOOKS):
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 	$(RM) xo-user
+
+asm:
+	$(MAKE) -C $(KDIR) M=$(PWD) CFLAGS_main.o="-S -fverbose-asm" main.s
